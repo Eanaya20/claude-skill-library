@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Claude Skill Library — CMG Product Team</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,sans-serif;background:#f9fafb;min-height:100vh}
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:#f1f1f1}
+  ::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+const TASK_TYPES = ["All","Writing","Analysis","Grooming","Documentation","Communication","Research"];
+const DIFFICULTIES = ["Beginner","Intermediate","Advanced"];
+const STORAGE_KEY = "cmg-skill-library-v1";
+
+const SEED_SKILLS = [
+  {id:1,title:"Discovery — Pull Work Items from ADO",taskType:"Grooming",difficulty:"Intermediate",tags:["ADO","Azure DevOps","work items","epic","feature"],useCase:"Use at the start of a grooming cycle to pull all work items tied to a specific Feature or Epic ID from Azure DevOps. Eliminates manual copy-paste from ADO into your workflow.",promptTemplate:"Connect to Azure DevOps and pull all work items under the following Feature or Epic ID.\n\nOrganization: [your ADO org]\nProject: [your project name]\nFeature/Epic ID: [ID number]\n\nReturn each item with: ID, Title, Type, State, and Description.",exampleOutput:"Work Items found under Epic #1042 — \"Consolidated Notes\":\n\n- #1101 | User Story | Active | \"As a loan officer, I want to view all notes in one panel...\"\n- #1102 | Task | New | \"Backend: Create notes aggregation API endpoint\"\n- #1103 | Bug | Active | \"Notes panel not loading for inactive loans\"",owner:"Daniel Posada",createdAt:"2025-02-18"},
+  {id:2,title:"Transform — Convert Items to CMG-SDLC Format",taskType:"Grooming",difficulty:"Intermediate",tags:["SDLC","Given/When/Then","Gherkin","formatting","CMG"],useCase:"Use after Discovery to reformat raw ADO work items into CMG's SDLC standard. Applies proper Given/When/Then acceptance criteria, correct labels, and consistent structure across all items.",promptTemplate:"Convert the following ADO work items into CMG-SDLC format.\n\nRequirements:\n- User stories must follow: \"As a [user], I want to [action] so that [benefit]\"\n- Acceptance criteria must use Gherkin format (Given/When/Then)\n- Apply CMG labels: [list your standard labels here]\n- Include: Story Points field (leave blank), Priority, and Component tag\n\nWork items to transform:\n[paste Discovery output here]",exampleOutput:"**#1101 — Consolidated Notes Panel**\nType: User Story | Priority: High | Label: notes, UI\n\nAs a loan officer, I want to view all borrower notes in a single consolidated panel so that I can quickly review communication history without switching screens.\n\nGiven I am viewing an active loan file\nWhen I click the Notes tab\nThen I see all notes sorted by date descending\nAnd each note displays author, timestamp, and category",owner:"Daniel Posada",createdAt:"2025-02-18"},
+  {id:3,title:"Merge — Consolidate FE + BE into Fullstack Issues",taskType:"Grooming",difficulty:"Advanced",tags:["merge","fullstack","frontend","backend","duplicates","consolidation"],useCase:"Use after Transform to identify related Frontend and Backend items that belong together and combine them into a single fullstack issue. Also flags and removes true duplicates, reducing noise in your backlog.",promptTemplate:"Review the following transformed work items and identify any Frontend/Backend pairs or duplicates that should be merged into fullstack issues.\n\nRules:\n- Merge FE and BE items only when they represent the same feature/change\n- Preserve all acceptance criteria from both items in the merged issue\n- Flag true duplicates (same intent, different wording) for removal\n- Label merged items as: fullstack\n\nTransformed items:\n[paste Transform output here]",exampleOutput:"**MERGED — Fullstack Issue: Consolidated Notes Panel**\nMerged from: #1101 (FE) + #1102 (BE)\nLabel: fullstack, notes\n\nIncludes combined acceptance criteria for both UI rendering and API endpoint.\n\n---\n**DUPLICATE FLAGGED:**\n#1098 appears to duplicate #1101 — recommend closing #1098 with reference to #1101.",owner:"Daniel Posada",createdAt:"2025-02-18"},
+  {id:4,title:"Validate — Score Issues Against Quality Rubric",taskType:"Analysis",difficulty:"Advanced",tags:["quality","rubric","scoring","validation","QA"],useCase:"Use after Merge to run a quality check on each issue before it goes to GitHub. Each issue must score 4.0 or higher. Catches missing acceptance criteria, vague descriptions, or incorrect formatting before publish.",promptTemplate:"Score each of the following issues against the CMG quality rubric. Each issue must score 4.0 or higher to proceed.\n\nRubric (1–5 scale per category):\n- Clarity of user story (clear actor, action, benefit)\n- Completeness of acceptance criteria (all scenarios covered)\n- Correct formatting (CMG-SDLC compliant)\n- Proper labels and metadata\n- Testability (can QA write a test from this?)\n\nReturn: score per category, overall score, and a list of issues that did NOT pass (score < 4.0) with specific reasons.\n\nIssues to validate:\n[paste Merge output here]",exampleOutput:"**#1101 — Consolidated Notes Panel**\nClarity: 5 | Completeness: 4 | Formatting: 5 | Labels: 4 | Testability: 4\nOverall Score: 4.4 ✅ PASS\n\n**#1103 — Notes Not Loading for Inactive Loans**\nClarity: 3 | Completeness: 2 | Formatting: 4 | Labels: 3 | Testability: 2\nOverall Score: 2.8 ❌ FAIL\nReason: Missing repro steps and expected vs. actual behavior.",owner:"Daniel Posada",createdAt:"2025-02-18"},
+  {id:5,title:"Final Validation — Second Quality Pass",taskType:"Analysis",difficulty:"Advanced",tags:["quality","final check","validation","QA","second pass"],useCase:"Use after fixing any issues that failed the first Validate step. This second pass catches anything missed in round one and confirms all issues are truly ready to publish.",promptTemplate:"Perform a final quality review on the following issues. These have already passed or been revised after the first validation round.\n\nFocus on:\n- Edge cases not covered in acceptance criteria\n- Ambiguous language that could be misinterpreted by dev or QA\n- Missing non-functional requirements (performance, accessibility, permissions)\n- Any cross-issue dependencies that should be noted\n\nReturn: a READY or NEEDS REVISION status for each issue, with specific callouts.\n\nIssues for final validation:\n[paste revised issues here]",exampleOutput:"**#1101 — Consolidated Notes Panel**\nStatus: ✅ READY\nNote: Consider adding a dependency tag to #1102 (API endpoint).\n\n**#1103 — Notes Not Loading for Inactive Loans**\nStatus: ⚠️ NEEDS REVISION\nCallout: Acceptance criteria still does not cover the empty state scenario.",owner:"Daniel Posada",createdAt:"2025-02-18"},
+  {id:6,title:"Create Issues — Publish to GitHub Repo",taskType:"Documentation",difficulty:"Intermediate",tags:["GitHub","publish","create issues","repo"],useCase:"Use as the final step after both validation passes are complete. Publishes all READY issues directly to the target GitHub repository. Only run this after Final Validation confirms all issues are ready.",promptTemplate:"Publish the following validated issues to the target GitHub repository.\n\nRepository: [org/repo-name]\nMilestone: [sprint or milestone name, if applicable]\nAssignee defaults: [leave blank or specify]\n\nFor each issue:\n- Set title, body (full CMG-SDLC formatted content), labels, and milestone\n- Link any noted dependencies using GitHub issue references (#issue-number)\n- Do not publish any issue still marked NEEDS REVISION\n\nIssues to publish:\n[paste Final Validation READY issues here]",exampleOutput:"✅ Published #1101 → github.com/CMGFinancial/clear-pos/issues/204\n✅ Published #1102 → github.com/CMGFinancial/clear-pos/issues/205\n⏭ Skipped #1103 — marked NEEDS REVISION\n\nSummary: 2 issues created, 1 skipped.",owner:"Daniel Posada",createdAt:"2025-02-18"}
+];
+
+const STEP_ORDER = ["Discovery — Pull Work Items from ADO","Transform — Convert Items to CMG-SDLC Format","Merge — Consolidate FE + BE into Fullstack Issues","Validate — Score Issues Against Quality Rubric","Final Validation — Second Quality Pass","Create Issues — Publish to GitHub Repo"];
+const diffColor = {Beginner:"background:#dcfce7;color:#15803d",Intermediate:"background:#fef9c3;color:#a16207",Advanced:"background:#fee2e2;color:#b91c1c"};
+const taskColor = {Writing:"background:#dbeafe;color:#1d4ed8",Analysis:"background:#f3e8ff;color:#7e22ce",Grooming:"background:#ffedd5;color:#c2410c",Documentation:"background:#ccfbf1;color:#0f766e",Communication:"background:#fce7f3;color:#be185d",Research:"background:#e0e7ff;color:#4338ca"};
+const emptySkill = {title:"",taskType:"Writing",difficulty:"Beginner",tags:"",useCase:"",promptTemplate:"",exampleOutput:"",owner:""};
+
+function loadSkills() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { const p = JSON.parse(raw); if (p.length) return p; }
+  } catch {}
+  return SEED_SKILLS;
+}
+
+function saveSkills(skills) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(skills)); } catch {}
+}
+
+function Badge({text, style}) {
+  const s = style || {};
+  return <span style={{fontSize:"11px",padding:"2px 8px",borderRadius:"999px",fontWeight:600,...s}}>{text}</span>;
+}
+
+function App() {
+  const [skills, setSkills] = useState(loadSkills);
+  const [filter, setFilter] = useState("All");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [mode, setMode] = useState("view");
+  const [form, setForm] = useState(emptySkill);
+  const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState("prompt");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [viewMode, setViewMode] = useState("browse");
+  const [saved, setSaved] = useState(false);
+
+  const persist = (updated) => { saveSkills(updated); setSaved(true); setTimeout(()=>setSaved(false),1500); };
+
+  const filtered = skills.filter(s => {
+    const matchType = filter==="All" || s.taskType===filter;
+    const q = search.toLowerCase();
+    const tags = Array.isArray(s.tags) ? s.tags.join(" ") : s.tags;
+    return matchType && (!q || s.title.toLowerCase().includes(q) || tags.toLowerCase().includes(q) || s.useCase.toLowerCase().includes(q));
+  });
+
+  const grouped = TASK_TYPES.filter(t=>t!=="All").reduce((acc,t)=>{
+    const items = filtered.filter(s=>s.taskType===t);
+    if(items.length) acc[t]=items;
+    return acc;
+  },{});
+
+  const copyPrompt = (text) => {
+    navigator.clipboard.writeText(text).catch(()=>{
+      const el = document.createElement("textarea");
+      el.value = text; document.body.appendChild(el); el.select();
+      document.execCommand("copy"); document.body.removeChild(el);
+    });
+    setCopied(true); setTimeout(()=>setCopied(false),1500);
+  };
+
+  const openAdd = () => { setForm(emptySkill); setMode("add"); setSelected(null); setConfirmDelete(false); };
+  const openEdit = (s) => { setForm({...s, tags: Array.isArray(s.tags)?s.tags.join(", "):s.tags}); setMode("edit"); setConfirmDelete(false); };
+
+  const saveSkill = () => {
+    if(!form.title||!form.promptTemplate) return;
+    const tags = typeof form.tags==="string" ? form.tags.split(",").map(t=>t.trim()).filter(Boolean) : form.tags;
+    let updated;
+    if(mode==="edit") {
+      updated = skills.map(s=>s.id===form.id?{...form,tags}:s);
+      setSelected({...form,tags});
+    } else {
+      const ns={...form,id:Date.now(),tags,createdAt:new Date().toISOString().split("T")[0]};
+      updated=[...skills,ns]; setSelected(ns);
+    }
+    setSkills(updated); persist(updated); setMode("view");
+  };
+
+  const deleteSkill = () => {
+    const updated = skills.filter(s=>s.id!==selected.id);
+    setSkills(updated); persist(updated); setSelected(null); setMode("view"); setConfirmDelete(false);
+  };
+
+  const workflowSkills = STEP_ORDER.map((title,i)=>({step:i+1,skill:skills.find(s=>s.title===title)})).filter(x=>x.skill);
+
+  const inputStyle = {width:"100%",border:"1px solid #e5e7eb",borderRadius:"8px",padding:"8px 12px",fontSize:"14px",outline:"none",fontFamily:"inherit"};
+  const labelStyle = {display:"block",fontSize:"13px",fontWeight:600,color:"#374151",marginBottom:"4px"};
+
+  function FormField({label,fieldKey,placeholder,rows}) {
+    return (
+      <div style={{marginBottom:"16px"}}>
+        <label style={labelStyle}>{label}</label>
+        {rows
+          ? <textarea value={form[fieldKey]} onChange={e=>setForm(f=>({...f,[fieldKey]:e.target.value}))} placeholder={placeholder} rows={rows} style={{...inputStyle,resize:"vertical"}}/>
+          : <input value={form[fieldKey]} onChange={e=>setForm(f=>({...f,[fieldKey]:e.target.value}))} placeholder={placeholder} style={inputStyle}/>
+        }
+      </div>
+    );
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",background:"#f9fafb"}}>
+      {/* Header */}
+      <div style={{background:"#fff",borderBottom:"1px solid #e5e7eb",padding:"14px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+        <div>
+          <div style={{fontSize:"18px",fontWeight:700,color:"#111827"}}>⚡ Claude Skill Library</div>
+          <div style={{fontSize:"13px",color:"#6b7280",marginTop:"2px"}}>CMG Product Team · {skills.length} skills {saved && <span style={{color:"#16a34a",marginLeft:"8px"}}>Saved ✓</span>}</div>
+        </div>
+        <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+          <div style={{display:"flex",background:"#f3f4f6",borderRadius:"8px",padding:"3px"}}>
+            {["browse","workflow"].map(v=>(
+              <button key={v} onClick={()=>setViewMode(v)} style={{padding:"5px 14px",borderRadius:"6px",border:"none",cursor:"pointer",fontSize:"12px",fontWeight:600,background:viewMode===v?"#fff":"transparent",color:viewMode===v?"#111827":"#6b7280",boxShadow:viewMode===v?"0 1px 3px rgba(0,0,0,.1)":"none"}}>
+                {v.charAt(0).toUpperCase()+v.slice(1)}
+              </button>
+            ))}
+          </div>
+          <button onClick={openAdd} style={{background:"#f97316",color:"#fff",border:"none",borderRadius:"8px",padding:"8px 16px",fontSize:"13px",fontWeight:600,cursor:"pointer"}}>+ Add Skill</button>
+        </div>
+      </div>
+
+      {/* Workflow View */}
+      {viewMode==="workflow" ? (
+        <div style={{flex:1,overflowY:"auto",padding:"32px 24px"}}>
+          <div style={{maxWidth:"720px",margin:"0 auto"}}>
+            <h2 style={{fontSize:"18px",fontWeight:700,color:"#111827",marginBottom:"4px"}}>Daniel's ADO → GitHub Pipeline</h2>
+            <p style={{fontSize:"13px",color:"#6b7280",marginBottom:"32px"}}>Run these 6 skills in order to go from raw ADO work items to published GitHub issues.</p>
+            {workflowSkills.map(({step,skill},idx)=>(
+              <div key={skill.id}>
+                <div onClick={()=>{setSelected(skill);setViewMode("browse");setMode("view");setTab("prompt");}} style={{display:"flex",gap:"16px",background:"#fff",borderRadius:"12px",border:"1px solid #e5e7eb",padding:"20px",cursor:"pointer",transition:"border-color .15s"}}>
+                  <div style={{width:"36px",height:"36px",borderRadius:"50%",background:"#f97316",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"14px",fontWeight:700,flexShrink:0}}>{step}</div>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px"}}>
+                      <span style={{fontWeight:700,fontSize:"14px",color:"#111827"}}>{skill.title}</span>
+                      <Badge text={skill.difficulty} style={diffColor[skill.difficulty]?{...Object.fromEntries(diffColor[skill.difficulty].split(";").map(p=>p.split(":").map(s=>s.trim())))}:{}}/>
+                    </div>
+                    <p style={{fontSize:"13px",color:"#6b7280",lineHeight:"1.5"}}>{skill.useCase}</p>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:"4px",marginTop:"8px"}}>
+                      {(Array.isArray(skill.tags)?skill.tags:[]).map(t=><span key={t} style={{background:"#f3f4f6",color:"#6b7280",fontSize:"11px",padding:"2px 8px",borderRadius:"999px"}}>#{t}</span>)}
+                    </div>
+                  </div>
+                  <span style={{fontSize:"12px",color:"#f97316",fontWeight:600,flexShrink:0,marginTop:"2px"}}>View →</span>
+                </div>
+                {idx<workflowSkills.length-1 && <div style={{width:"1px",height:"16px",background:"#d1d5db",margin:"0 0 0 36px"}}/>}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+          {/* Sidebar */}
+          <div style={{width:"280px",background:"#fff",borderRight:"1px solid #e5e7eb",display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}>
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #e5e7eb"}}>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search skills..." style={{...inputStyle}}/>
+            </div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"4px",padding:"12px 16px",borderBottom:"1px solid #e5e7eb"}}>
+              {TASK_TYPES.map(t=>(
+                <button key={t} onClick={()=>setFilter(t)} style={{fontSize:"11px",padding:"3px 10px",borderRadius:"999px",border:`1px solid ${filter===t?"#f97316":"#e5e7eb"}`,background:filter===t?"#f97316":"#fff",color:filter===t?"#fff":"#6b7280",cursor:"pointer",fontWeight:600}}>{t}</button>
+              ))}
+            </div>
+            <div style={{overflowY:"auto",flex:1,padding:"12px"}}>
+              {Object.entries(grouped).map(([type,items])=>(
+                <div key={type} style={{marginBottom:"16px"}}>
+                  <div style={{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:"0.08em",padding:"0 8px",marginBottom:"6px"}}>{type}</div>
+                  {items.map(s=>(
+                    <button key={s.id} onClick={()=>{setSelected(s);setMode("view");setConfirmDelete(false);setTab("prompt");}} style={{width:"100%",textAlign:"left",padding:"10px 12px",borderRadius:"8px",border:selected?.id===s.id?"1px solid #fdba74":"1px solid transparent",background:selected?.id===s.id?"#fff7ed":"transparent",cursor:"pointer",marginBottom:"2px"}}>
+                      <div style={{fontSize:"13px",fontWeight:600,color:selected?.id===s.id?"#c2410c":"#374151",lineHeight:"1.3"}}>{s.title}</div>
+                      <div style={{display:"flex",gap:"6px",marginTop:"4px",alignItems:"center"}}>
+                        <Badge text={s.difficulty} style={diffColor[s.difficulty]?{...Object.fromEntries(diffColor[s.difficulty].split(";").map(p=>p.split(":").map(x=>x.trim())))}:{}}/>
+                        <span style={{fontSize:"11px",color:"#9ca3af"}}>· {s.owner}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {Object.keys(grouped).length===0 && <p style={{fontSize:"13px",color:"#9ca3af",textAlign:"center",padding:"32px 0"}}>No skills found</p>}
+            </div>
+          </div>
+
+          {/* Main */}
+          <div style={{flex:1,overflowY:"auto",padding:"24px"}}>
+            {(mode==="add"||mode==="edit") ? (
+              <div style={{maxWidth:"640px"}}>
+                <h2 style={{fontSize:"18px",fontWeight:700,color:"#111827",marginBottom:"20px"}}>{mode==="edit"?"Edit Skill":"Add New Skill"}</h2>
+                <FormField label="Skill Title" fieldKey="title" placeholder="e.g. Acceptance Criteria Writer"/>
+                <FormField label="Owner / Contributor" fieldKey="owner" placeholder="Your name or 'Team'"/>
+                <div style={{display:"flex",gap:"12px",marginBottom:"16px"}}>
+                  <div style={{flex:1}}>
+                    <label style={labelStyle}>Task Type</label>
+                    <select value={form.taskType} onChange={e=>setForm(f=>({...f,taskType:e.target.value}))} style={{...inputStyle}}>
+                      {TASK_TYPES.filter(t=>t!=="All").map(t=><option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div style={{flex:1}}>
+                    <label style={labelStyle}>Difficulty</label>
+                    <select value={form.difficulty} onChange={e=>setForm(f=>({...f,difficulty:e.target.value}))} style={{...inputStyle}}>
+                      {DIFFICULTIES.map(d=><option key={d}>{d}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <FormField label="Tags (comma-separated)" fieldKey="tags" placeholder="e.g. grooming, user stories, byte"/>
+                <FormField label="When to Use" fieldKey="useCase" placeholder="Describe when this skill is most helpful..." rows={3}/>
+                <FormField label="Prompt Template" fieldKey="promptTemplate" placeholder="Paste your Claude prompt. Use [brackets] for fill-in sections..." rows={5}/>
+                <FormField label="Example Output" fieldKey="exampleOutput" placeholder="Paste a sample of what Claude returns..." rows={4}/>
+                <div style={{display:"flex",gap:"10px",marginTop:"8px"}}>
+                  <button onClick={saveSkill} style={{background:"#f97316",color:"#fff",border:"none",borderRadius:"8px",padding:"9px 20px",fontSize:"13px",fontWeight:600,cursor:"pointer"}}>{mode==="edit"?"Save Changes":"Save Skill"}</button>
+                  <button onClick={()=>{setMode("view");setForm(emptySkill);}} style={{background:"none",border:"none",color:"#6b7280",fontSize:"13px",cursor:"pointer",padding:"9px 12px"}}>Cancel</button>
+                </div>
+              </div>
+            ) : selected ? (
+              <div style={{maxWidth:"640px"}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"16px"}}>
+                  <div>
+                    <h2 style={{fontSize:"20px",fontWeight:700,color:"#111827",lineHeight:"1.3"}}>{selected.title}</h2>
+                    <div style={{display:"flex",gap:"6px",marginTop:"8px",flexWrap:"wrap",alignItems:"center"}}>
+                      {taskColor[selected.taskType] && <Badge text={selected.taskType} style={Object.fromEntries(taskColor[selected.taskType].split(";").map(p=>p.split(":").map(x=>x.trim())))}/>}
+                      {diffColor[selected.difficulty] && <Badge text={selected.difficulty} style={Object.fromEntries(diffColor[selected.difficulty].split(";").map(p=>p.split(":").map(x=>x.trim())))}/>}
+                      <span style={{fontSize:"12px",color:"#9ca3af"}}>by {selected.owner} · {selected.createdAt}</span>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:"6px",flexShrink:0,marginLeft:"16px"}}>
+                    <button onClick={()=>openEdit(selected)} style={{fontSize:"12px",padding:"6px 12px",borderRadius:"8px",border:"1px solid #e5e7eb",background:"#fff",color:"#374151",cursor:"pointer",fontWeight:600}}>✏️ Edit</button>
+                    {!confirmDelete
+                      ? <button onClick={()=>setConfirmDelete(true)} style={{fontSize:"12px",padding:"6px 12px",borderRadius:"8px",border:"1px solid #fecaca",background:"#fff",color:"#ef4444",cursor:"pointer",fontWeight:600}}>🗑 Delete</button>
+                      : <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                          <span style={{fontSize:"12px",color:"#ef4444",fontWeight:600}}>Sure?</span>
+                          <button onClick={deleteSkill} style={{fontSize:"12px",padding:"5px 10px",borderRadius:"6px",border:"none",background:"#ef4444",color:"#fff",cursor:"pointer",fontWeight:600}}>Yes</button>
+                          <button onClick={()=>setConfirmDelete(false)} style={{fontSize:"12px",padding:"5px 10px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"#fff",color:"#6b7280",cursor:"pointer"}}>No</button>
+                        </div>
+                    }
+                  </div>
+                </div>
+
+                <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:"10px",padding:"14px 16px",marginBottom:"20px"}}>
+                  <div style={{fontSize:"10px",fontWeight:700,color:"#3b82f6",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:"4px"}}>When to Use</div>
+                  <p style={{fontSize:"13px",color:"#1e3a5f",lineHeight:"1.6"}}>{selected.useCase}</p>
+                </div>
+
+                <div style={{display:"flex",gap:"4px",marginBottom:"12px"}}>
+                  {[["prompt","Prompt Template"],["output","Example Output"]].map(([k,l])=>(
+                    <button key={k} onClick={()=>setTab(k)} style={{fontSize:"13px",padding:"7px 16px",borderRadius:"8px",border:"none",cursor:"pointer",fontWeight:600,background:tab===k?"#111827":"#f3f4f6",color:tab===k?"#fff":"#6b7280"}}>{l}</button>
+                  ))}
+                </div>
+
+                {tab==="prompt" && (
+                  <div style={{position:"relative"}}>
+                    <pre style={{background:"#1f2937",color:"#f9fafb",borderRadius:"10px",padding:"16px",fontSize:"13px",whiteSpace:"pre-wrap",lineHeight:"1.6",overflowX:"auto"}}>{selected.promptTemplate}</pre>
+                    <button onClick={()=>copyPrompt(selected.promptTemplate)} style={{position:"absolute",top:"10px",right:"10px",fontSize:"11px",padding:"5px 12px",borderRadius:"6px",border:"none",cursor:"pointer",fontWeight:600,background:copied?"#16a34a":"#374151",color:"#fff"}}>{copied?"Copied!":"Copy"}</button>
+                  </div>
+                )}
+                {tab==="output" && (
+                  <pre style={{background:"#f9fafb",border:"1px solid #e5e7eb",borderRadius:"10px",padding:"16px",fontSize:"13px",whiteSpace:"pre-wrap",lineHeight:"1.6",color:"#374151"}}>{selected.exampleOutput}</pre>
+                )}
+
+                <div style={{display:"flex",flexWrap:"wrap",gap:"6px",marginTop:"20px"}}>
+                  {(Array.isArray(selected.tags)?selected.tags:[]).map(t=><span key={t} style={{background:"#f3f4f6",color:"#6b7280",fontSize:"12px",padding:"3px 10px",borderRadius:"999px"}}>#{t}</span>)}
+                </div>
+              </div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",textAlign:"center",color:"#6b7280"}}>
+                <div style={{fontSize:"48px",marginBottom:"16px"}}>⚡</div>
+                <h3 style={{fontSize:"16px",fontWeight:600,color:"#374151",marginBottom:"8px"}}>Select a skill to view it</h3>
+                <p style={{fontSize:"13px",maxWidth:"260px",lineHeight:"1.6"}}>Browse by task type or search on the left. Switch to <strong>Workflow</strong> view to see Daniel's full pipeline.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.render(<App/>, document.getElementById("root"));
+</script>
+</body>
+</html>
